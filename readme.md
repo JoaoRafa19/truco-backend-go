@@ -7,3 +7,83 @@
 
 API de truco online para applicação mobile
 
+
+
+
+
+Utiliza `sqlc` para gerar as interfaces das entidades das tabelas dos bancos de dados (não é um ORM) e as queries SQL.
+Utiliza o `tern` para criar e executar as migations.
+
+## Go generate
+
+Executa os comandos declarados em `gen.go`
+```go
+package gen 
+
+
+//go:generate go run ./cmd/tools/terndotenv/main.go
+//go:generate sqlc generate -f ./internal/store/pgstore/sqlc.yml
+```
+```shell
+go generate ./...
+```
+
+## Migrations
+Utiliazando o tern para criar migrações, mas para executar com o ambiente local do docker pelo arquivo .env
+utiliza o `os\exec` do go para rodar comandos no ambiente
+
+```shell
+go run ./cmd/tools/terndotenv/main.go
+```
+
+## Queries
+
+Usa `sqlc` para gerar as queries
+
+```shell
+sqlc generate -f ./internal/store/pgstore/sqlc.yml
+```
+
+
+## Deps
+
+
+#### Install all deps:
+```shell
+go mod tidy
+```
+
+- **tern**
+```shell
+ go install github.com/jackc/tern/v2@latest
+ ```
+
+- **sqlc**
+```shell
+go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+```
+
+
+
+## Generate
+
+# Requisitos
+
+## Frontend
+
+- [ ]  Tela de login
+- [ ]  Tela de entrar / criar sala
+- [ ] Tela de jogo (bonfire)
+
+
+### Backend
+
+- [ ] Salva o estado atual da sala e do deck
+- [ ] Cada sala tem o estado do jogo
+- [ ] Regras do jogo
+- [ ] Cada sala tem um deck
+- [ ] Regras de pontuaçao 
+- [ ] Setup banco de dados para salas de jogo
+- [ ] Setup banco de dados para jogadores
+- [ ] Autenticação JWT
+Cada sala tem os jogadores salvos

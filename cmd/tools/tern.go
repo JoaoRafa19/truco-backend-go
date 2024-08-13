@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log/slog"
 	"os/exec"
 
@@ -8,7 +9,7 @@ import (
 )
 
 func main() {
-	if err := godotenv.Load(".env"); err != nil {
+	if err := godotenv.Load(); err != nil {
 		slog.Error("Erro ao carregar variaveis", "erro", err)
 		panic(err)
 	}
@@ -16,14 +17,15 @@ func main() {
 	cmd := exec.Command(
 		"tern",
 		"migrate",
-		"--migrations",
+		"-m",
 		"./internal/store/pgstore/migrations",
 		"--config", 
 		"./internal/store/pgstore/migrations/tern.conf",
 	)
 
-	if err := cmd.Run(); err != nil {
-		slog.Error("Erro ao realizar migração", "erro", err)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		slog.Error("Erro ao realizar migração", "erro", string(out))
+		fmt.Println(string(out))
 		panic(err)
 	}
 

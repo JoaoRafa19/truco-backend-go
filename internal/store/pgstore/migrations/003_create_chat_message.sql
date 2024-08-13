@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS  chat_messages (
     "player"        uuid                    NOT NULL,
     "created_at"    DATE                    NOT NULL DEFAULT now(),
 
-    FOREIGN KEY (room_id)   REFERENCES game(id) ON DELETE CASCADE,
+    FOREIGN KEY (room_id)   REFERENCES games(id) ON DELETE CASCADE,
     FOREIGN KEY (player)    REFERENCES players(id)
 );
 

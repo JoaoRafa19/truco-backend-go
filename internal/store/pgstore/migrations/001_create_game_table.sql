@@ -1,4 +1,4 @@
-CREATE TYPE STATE( truco, seis, nove );
+CREATE TYPE state AS ENUM ( 'truco', 'seis', 'nove' );
 
 CREATE TABLE IF NOT EXISTS games (
     "id"            uuid    PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS games (
     "created_at"    DATE                NOT NULL DEFAULT now(),
     "result"        JSONB,
     "players"       uuid[]              NOT NULL,
-    "state"         STATE    
+    "state"         state
 );
 
 ---- create above / drop below ----

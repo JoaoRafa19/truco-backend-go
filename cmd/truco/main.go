@@ -46,8 +46,8 @@ func main() {
 			"PID: ",
 			os.Getpid(),
 		)
+		fmt.Println("RUNNING ON: localhost:3000")
 		if err := http.ListenAndServe(":3000", handler); err != nil {
-			fmt.Println("RUNNING ON: localhost:3000")
 			if !errors.Is(err, http.ErrServerClosed) {
 				panic(err)
 			}

@@ -15,9 +15,10 @@ import (
 type State string
 
 const (
-	StateTruco State = "truco"
-	StateSeis  State = "seis"
-	StateNove  State = "nove"
+	StateNormal State = "normal"
+	StateTruco  State = "truco"
+	StateSeis   State = "seis"
+	StateNove   State = "nove"
 )
 
 func (e *State) Scan(src interface{}) error {
@@ -65,14 +66,14 @@ type ChatMessage struct {
 
 type Game struct {
 	ID        uuid.UUID
-	Rodada    int32
-	CreatedAt pgtype.Date
+	CreatedAt pgtype.Timestamp
 	Result    []byte
-	Players   []uuid.UUID
-	State     NullState
+	State     State
+	Round     int32
 }
 
 type Player struct {
-	ID   uuid.UUID
-	Name string
+	ID     uuid.UUID
+	Name   string
+	RoomID uuid.UUID
 }

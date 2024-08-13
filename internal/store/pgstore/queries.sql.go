@@ -7,14 +7,112 @@ package pgstore
 
 import (
 	"context"
+	"github.com/google/uuid"
 )
 
-const getRooms = `-- name: GetRooms :many
-SELECT id, rodada, created_at, result, players, state FROM games
+const createMessage = `-- name: CreateMessage :one
+INSERT INTO chat_messages 
+("room_id", "message", "player" )
+VALUES 
+($1, $2, $3)
+RETURNING "id"
 `
 
-func (q *Queries) GetRooms(ctx context.Context) ([]Game, error) {
-	rows, err := q.db.Query(ctx, getRooms)
+type CreateMessageParams struct {
+	RoomID  uuid.UUID
+	Message string
+	Player  uuid.UUID
+}
+
+func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, createMessage, arg.RoomID, arg.Message, arg.Player)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const createNewGame = `-- name: CreateNewGame :one
+INSERT INTO games 
+("state", "rodada", "created_at", "result")
+VALUES 
+(DEFAULT, DEFAULT, DEFAULT, DEFAULT)
+RETURNING "id"
+`
+
+func (q *Queries) CreateNewGame(ctx context.Context) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, createNewGame)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const createPlayer = `-- name: CreatePlayer :one
+INSERT INTO players 
+("name", "room_id")
+VALUES
+($1, $2)
+RETURNING "id"
+`
+
+type CreatePlayerParams struct {
+	Name   string
+	RoomID uuid.UUID
+}
+
+func (q *Queries) CreatePlayer(ctx context.Context, arg CreatePlayerParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, createPlayer, arg.Name, arg.RoomID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const deleteGameRoom = `-- name: DeleteGameRoom :one
+DELETE FROM games 
+WHERE
+    id=$1
+RETURNING "id"
+`
+
+func (q *Queries) DeleteGameRoom(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, deleteGameRoom, id)
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getGamePlayers = `-- name: GetGamePlayers :many
+SELECT 
+    "id" 
+FROM players 
+WHERE
+    room_id=$1
+`
+
+func (q *Queries) GetGamePlayers(ctx context.Context, roomID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, getGamePlayers, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getGames = `-- name: GetGames :many
+SELECT id, created_at, result, state, round FROM games
+`
+
+func (q *Queries) GetGames(ctx context.Context) ([]Game, error) {
+	rows, err := q.db.Query(ctx, getGames)
 	if err != nil {
 		return nil, err
 	}
@@ -24,11 +122,10 @@ func (q *Queries) GetRooms(ctx context.Context) ([]Game, error) {
 		var i Game
 		if err := rows.Scan(
 			&i.ID,
-			&i.Rodada,
 			&i.CreatedAt,
 			&i.Result,
-			&i.Players,
 			&i.State,
+			&i.Round,
 		); err != nil {
 			return nil, err
 		}
@@ -38,4 +135,88 @@ func (q *Queries) GetRooms(ctx context.Context) ([]Game, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const getMessage = `-- name: GetMessage :one
+SELECT id, room_id, message, player, created_at FROM chat_messages
+WHERE id=$1
+`
+
+func (q *Queries) GetMessage(ctx context.Context, id uuid.UUID) (ChatMessage, error) {
+	row := q.db.QueryRow(ctx, getMessage, id)
+	var i ChatMessage
+	err := row.Scan(
+		&i.ID,
+		&i.RoomID,
+		&i.Message,
+		&i.Player,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getRoom = `-- name: GetRoom :one
+SELECT id, created_at, result, state, round FROM games
+WHERE id=$1
+`
+
+func (q *Queries) GetRoom(ctx context.Context, id uuid.UUID) (Game, error) {
+	row := q.db.QueryRow(ctx, getRoom, id)
+	var i Game
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.Result,
+		&i.State,
+		&i.Round,
+	)
+	return i, err
+}
+
+const getRoomMessages = `-- name: GetRoomMessages :many
+SELECT id, room_id, message, player, created_at FROM chat_messages
+WHERE room_id=$1
+`
+
+func (q *Queries) GetRoomMessages(ctx context.Context, roomID uuid.UUID) ([]ChatMessage, error) {
+	rows, err := q.db.Query(ctx, getRoomMessages, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ChatMessage
+	for rows.Next() {
+		var i ChatMessage
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.Message,
+			&i.Player,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setRoomState = `-- name: SetRoomState :exec
+UPDATE games 
+SET 
+"state"=$1
+WHERE id=$2
+`
+
+type SetRoomStateParams struct {
+	State State
+	ID    uuid.UUID
+}
+
+func (q *Queries) SetRoomState(ctx context.Context, arg SetRoomStateParams) error {
+	_, err := q.db.Exec(ctx, setRoomState, arg.State, arg.ID)
+	return err
 }

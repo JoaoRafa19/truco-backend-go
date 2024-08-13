@@ -33,6 +33,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	defer pool.Close()
 
 	if err := pool.Ping(ctx); err != nil {
 		panic(err)

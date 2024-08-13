@@ -86,4 +86,6 @@ go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
 - [X] Setup banco de dados para salas de jogo
 - [X] Setup banco de dados para jogadores
 - [ ] Autenticação JWT
+
+
 Cada sala tem os jogadores salvos

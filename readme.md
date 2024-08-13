@@ -83,7 +83,7 @@ go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
 - [ ] Regras do jogo
 - [ ] Cada sala tem um deck
 - [ ] Regras de pontuaçao 
-- [ ] Setup banco de dados para salas de jogo
-- [ ] Setup banco de dados para jogadores
+- [X] Setup banco de dados para salas de jogo
+- [X] Setup banco de dados para jogadores
 - [ ] Autenticação JWT
 Cada sala tem os jogadores salvos

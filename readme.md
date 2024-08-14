@@ -85,7 +85,10 @@ go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
 - [ ] Regras de pontuaçao 
 - [X] Setup banco de dados para salas de jogo
 - [X] Setup banco de dados para jogadores
-- [ ] Autenticação JWT
-
+- [ ] Autenticação JWT?
+- [X] Criar sala de jogo
+- [X] Entrar na sala
+- [X] Receber mensagens do Websocket
+- [X] Sai da sala e remove a sala caso seja a ultima conexão
 
 Cada sala tem os jogadores salvos

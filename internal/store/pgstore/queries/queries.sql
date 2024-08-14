@@ -3,10 +3,10 @@ SELECT * FROM games;
 
 -- name: CreateNewGame :one
 INSERT INTO games 
-("state", "rodada", "created_at", "result")
+("state", "round", "created_at", "result")
 VALUES 
 (DEFAULT, DEFAULT, DEFAULT, DEFAULT)
-RETURNING "id";
+RETURNING *;
 
 -- name: GetRoom :one
 SELECT * FROM games
@@ -54,3 +54,8 @@ DELETE FROM games
 WHERE
     id=$1
 RETURNING "id";
+
+-- name: RemovePlayerFromRoomReturningRoom :one
+DELETE FROM players 
+WHERE id=$1
+RETURNING "room_id";

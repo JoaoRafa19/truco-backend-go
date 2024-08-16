@@ -50,9 +50,10 @@ func NewHandler(q *pgstore.Queries) http.Handler {
 	}))
 
 	r.Get("/echo/{message}/teste", h.handleEcho)
-
+	
 	r.Route("/game", func(r chi.Router) {
 		r.Post("/", h.handleCreateGame)
+		r.Get("/", h.getAllRooms)
 		r.Patch("/{game_id}/enter", h.handleEnterGame)
 		r.Route("/{game_id}", func(r chi.Router) {
 			r.Use(jwtauth.Verifier(h.tokenAuth))

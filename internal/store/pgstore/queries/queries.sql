@@ -19,7 +19,7 @@ VALUES
 ($1, $2)
 RETURNING "id";
 
--- name: GetGamePlayers :many
+-- name: GetRoomPlayers :many
 SELECT 
     "id" 
 FROM players 
@@ -55,7 +55,10 @@ WHERE
     id=$1
 RETURNING "id";
 
--- name: RemovePlayerFromRoomReturningRoom :one
+-- name: RemovePlayerFromRoom :one
 DELETE FROM players 
 WHERE id=$1
-RETURNING "room_id";
+RETURNING "id";
+
+-- name: GetAllRooms :many
+SELECT * FROM games;

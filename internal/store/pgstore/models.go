@@ -70,6 +70,7 @@ type Game struct {
 	Result    []byte
 	State     State
 	Round     int32
+	DeckID    pgtype.Text
 }
 
 type Player struct {

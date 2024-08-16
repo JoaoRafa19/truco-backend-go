@@ -24,14 +24,20 @@ func (h apiHandler) handleEcho(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("echo " + message))
 }
 
-func returnError(handler string, err error, w http.ResponseWriter, status int) {
-	slog.Info(handler, "error", err)
-	switch status {
-	case http.StatusInternalServerError:
-		http.Error(w, "something went wrong", status)
-	case http.StatusBadRequest:
-		http.Error(w, "bad request", status)
+func returnError(w http.ResponseWriter, status int) {
+
+	type _Message struct {
+		Error string `json:"error"`
 	}
+	var errorMessage _Message
+	w.WriteHeader(status)
+
+	errorMessage = _Message{
+		Error: http.StatusText(status),
+	}
+
+	data, _ := json.Marshal(errorMessage)
+	w.Write(data)
 }
 
 func returnData(result []byte, w http.ResponseWriter) {
@@ -47,7 +53,7 @@ func (h apiHandler) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 	game, err := h.q.CreateNewGame(r.Context())
 	if err != nil {
 		slog.Error("CreateGame", "error", err)
-		returnError("handleCreateGame", err, w, http.StatusInternalServerError)
+		returnError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -68,7 +74,7 @@ func (h apiHandler) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 			Round:     game.Round,
 		})
 	if err != nil {
-		returnError("handleCreateGame", err, w, http.StatusInternalServerError)
+		returnError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -80,7 +86,7 @@ func (h apiHandler) handleEnterGame(w http.ResponseWriter, r *http.Request) {
 	gameId := chi.URLParam(r, "game_id")
 
 	if gameId == "" {
-		returnError("handleEnterGame", fmt.Errorf("missing game id"), w, http.StatusBadRequest)
+		returnError(w, http.StatusBadRequest)
 		return
 	}
 
@@ -98,7 +104,7 @@ func (h apiHandler) handleEnterGame(w http.ResponseWriter, r *http.Request) {
 	var body requestBody
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		returnError("handleEnterGame", err, w, http.StatusInternalServerError)
+		returnError(w, http.StatusInternalServerError)
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
@@ -124,7 +130,7 @@ func (h apiHandler) handleEnterGame(w http.ResponseWriter, r *http.Request) {
 
 	_, tokenString, err := h.tokenAuth.Encode(responsePayload)
 	if err != nil {
-		returnError("handleEnterGame", err, w, http.StatusInternalServerError)
+		returnError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -135,7 +141,7 @@ func (h apiHandler) handleEnterGame(w http.ResponseWriter, r *http.Request) {
 	result, err := json.Marshal(responseBody{Token: tokenString})
 
 	if err != nil {
-		returnError("handleEnterGame", err, w, http.StatusInternalServerError)
+		returnError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -146,7 +152,7 @@ func (h apiHandler) handleConnectToRoom(w http.ResponseWriter, r *http.Request) 
 	gameId := chi.URLParam(r, "game_id")
 
 	if gameId == "" {
-		returnError("handleEnterGame", fmt.Errorf("missing game id"), w, http.StatusBadRequest)
+		returnError(w, http.StatusBadRequest)
 		return
 	}
 
@@ -169,7 +175,7 @@ func (h apiHandler) handleConnectToRoom(w http.ResponseWriter, r *http.Request) 
 	fmt.Print(gameRoom)
 
 	// verify if the user is on this room
-	players, err := h.q.GetGamePlayers(r.Context(), roomID)
+	players, err := h.q.GetRoomPlayers(r.Context(), roomID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			http.Error(w, "room not found", http.StatusBadRequest)
@@ -179,48 +185,18 @@ func (h apiHandler) handleConnectToRoom(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_, data, err := jwtauth.FromContext(r.Context())
+	
+	playerID, roomID, err := h.GetPlayerAndRoom(r, w, roomID)
 	if err != nil {
-		http.Error(w, "something went wrong", http.StatusInternalServerError)
+		slog.Error("Erro ao validar informações", "error", err)
+		returnError(w, http.StatusBadRequest)
 		return
-	}
-
-	fmt.Print(data)
-	room := data["room_id"]
-	playerID := data["player_id"]
-	roomIDString, ok := room.(string)
-	if !ok {
-		slog.Error("Erro: o valor não é uma string")
-		http.Error(w, "something went wrong", http.StatusInternalServerError)
-		return
-	}
-	playerIDString, ok := playerID.(string)
-	if !ok {
-		slog.Error("Erro: o valor não é uma string")
-		http.Error(w, "something went wrong", http.StatusInternalServerError)
-		return
-	}
-
-	requestRoomID, err := uuid.Parse(roomIDString)
-	if err != nil {
-		http.Error(w, "something went wrong", http.StatusInternalServerError)
-		return
-	}
-
-	if requestRoomID != roomID {
-		http.Error(w, "something went wrong", http.StatusBadRequest)
-		return
-	}
-	var player uuid.UUID
-
-	if player, err = uuid.Parse(playerIDString); err != nil {
-		http.Error(w, "something went wrong", http.StatusBadRequest)
-		return
-	}
+	} 
 
 	playerIsInRoom := func() bool {
 		for _, player := range players {
-			if player.String() == playerIDString {
+
+			if player.String() == playerID.String() {
 				return true
 			}
 		}
@@ -228,7 +204,8 @@ func (h apiHandler) handleConnectToRoom(w http.ResponseWriter, r *http.Request) 
 	}()
 
 	if !playerIsInRoom {
-		http.Error(w, "something went wrong", http.StatusUnauthorized)
+		w.WriteHeader(http.StatusUnauthorized)
+		returnError(w, http.StatusUnauthorized)
 		return
 	}
 
@@ -254,56 +231,107 @@ func (h apiHandler) handleConnectToRoom(w http.ResponseWriter, r *http.Request) 
 
 	h.mu.Unlock()
 
+	go h.readAndNotifyClients(c, r, playerID, roomID)
+
+	<-ctx.Done()
+}
+
+func (h apiHandler) readAndNotifyClients(c *websocket.Conn, r *http.Request, playerID uuid.UUID, roomID uuid.UUID) error {
 	for {
 		msgType, msg, err := c.ReadMessage()
 
-		if msgType == websocket.CloseAbnormalClosure {
-			break
-		}
-		if err != nil {
-			if errors.Is(err, &websocket.CloseError{}) {
-				h.mu.Lock()
-				h.disconectClient(c, r, player)
-				h.mu.Unlock()
-				break
-			}
-		}
-
-		if msgType == -1 {
+		if err != nil || msgType == -1 {
 			h.mu.Lock()
-			h.disconectClient(c, r, player)
+			h.disconectClient(c, r, playerID)
 			h.mu.Unlock()
-			return
-		}
-
-		if err != nil {
-			slog.Error("erro", "error", err)
-			continue
+			return err
 		}
 
 		if strings.Contains(string(msg), "echo:") {
-			slog.Info(string(msg))
-			c.WriteMessage(websocket.TextMessage, []byte("hi 2"))
+			slog.Info("ROOMID", "room:", roomID.String())
+			c.WriteMessage(websocket.TextMessage, []byte(msg))
 		}
 
 	}
-	<-ctx.Done()
+}
+
+func (apiHandler) GetPlayerAndRoom(r *http.Request, w http.ResponseWriter, roomID uuid.UUID) (uuid.UUID, uuid.UUID, error) {
+	_, data, err := jwtauth.FromContext(r.Context())
+	if err != nil {
+		http.Error(w, "something went wrong", http.StatusInternalServerError)
+		return uuid.Nil, uuid.Nil, err
+	}
+
+	fmt.Print(data)
+	room := data["room_id"]
+	playerID := data["player_id"]
+	roomIDString, ok := room.(string)
+	if !ok {
+		slog.Error("Erro: o valor não é uma string")
+		http.Error(w, "something went wrong", http.StatusInternalServerError)
+		return uuid.Nil, uuid.Nil, err
+	}
+	playerIDString, ok := playerID.(string)
+	if !ok {
+		slog.Error("Erro: o valor não é uma string")
+		http.Error(w, "something went wrong", http.StatusInternalServerError)
+		return uuid.Nil, uuid.Nil, err
+	}
+
+	requestRoomID, err := uuid.Parse(roomIDString)
+	if err != nil {
+		http.Error(w, "something went wrong", http.StatusInternalServerError)
+		return uuid.Nil, uuid.Nil, err
+	}
+
+	if requestRoomID != roomID {
+		http.Error(w, "something went wrong", http.StatusBadRequest)
+		return uuid.Nil, uuid.Nil, fmt.Errorf("player não está nessa sala")
+	}
+	var player uuid.UUID
+
+	if player, err = uuid.Parse(playerIDString); err != nil {
+		http.Error(w, "something went wrong", http.StatusBadRequest)
+		return uuid.Nil, uuid.Nil, err
+	}
+	return player, roomID, nil
+}
+
+func (h apiHandler) getAllRooms(w http.ResponseWriter, r *http.Request) {
+
+	rooms, err := h.q.GetAllRooms(r.Context())
+	if err != nil {
+		returnError(w, http.StatusInternalServerError)
+		return
+	}
+
+	type roomsResponse struct {
+		ID string `json:"id"`
+	}
+
+	var response []roomsResponse
+	for _, room := range rooms {
+		response = append(response, roomsResponse{ID: room.ID.String()})
+	}
+	result, err := json.Marshal(response)
+	if err != nil {
+		returnError(w, http.StatusInternalServerError)
+		return
+	}
+	returnData(result, w)
 }
 
 func (h apiHandler) disconectClient(c *websocket.Conn, r *http.Request, playerId uuid.UUID) error {
 
 	slog.Info("disconect client")
-	room_id, err := h.q.RemovePlayerFromRoomReturningRoom(r.Context(), playerId)
+	room_id, err := h.q.RemovePlayerFromRoom(r.Context(), playerId)
 
 	if err != nil {
 		return err
 	}
 
 	delete(h.clients[room_id.String()], c)
-	
-
-	room, err := h.q.GetGamePlayers(r.Context(), room_id)
-
+	room, err := h.q.GetRoomPlayers(r.Context(), room_id)
 	if err != nil {
 		slog.Error("erro ao terminar jogo", "error", err)
 		return err

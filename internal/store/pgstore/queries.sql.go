@@ -37,7 +37,7 @@ INSERT INTO games
 ("state", "round", "created_at", "result")
 VALUES 
 (DEFAULT, DEFAULT, DEFAULT, DEFAULT)
-RETURNING id, created_at, result, state, round
+RETURNING id, created_at, result, state, round, deck_id
 `
 
 func (q *Queries) CreateNewGame(ctx context.Context) (Game, error) {
@@ -49,6 +49,7 @@ func (q *Queries) CreateNewGame(ctx context.Context) (Game, error) {
 		&i.Result,
 		&i.State,
 		&i.Round,
+		&i.DeckID,
 	)
 	return i, err
 }
@@ -86,27 +87,30 @@ func (q *Queries) DeleteGameRoom(ctx context.Context, id uuid.UUID) (uuid.UUID, 
 	return id, err
 }
 
-const getGamePlayers = `-- name: GetGamePlayers :many
-SELECT 
-    "id" 
-FROM players 
-WHERE
-    room_id=$1
+const getAllRooms = `-- name: GetAllRooms :many
+SELECT id, created_at, result, state, round, deck_id FROM games
 `
 
-func (q *Queries) GetGamePlayers(ctx context.Context, roomID uuid.UUID) ([]uuid.UUID, error) {
-	rows, err := q.db.Query(ctx, getGamePlayers, roomID)
+func (q *Queries) GetAllRooms(ctx context.Context) ([]Game, error) {
+	rows, err := q.db.Query(ctx, getAllRooms)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []uuid.UUID
+	var items []Game
 	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
+		var i Game
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.Result,
+			&i.State,
+			&i.Round,
+			&i.DeckID,
+		); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -115,7 +119,7 @@ func (q *Queries) GetGamePlayers(ctx context.Context, roomID uuid.UUID) ([]uuid.
 }
 
 const getGames = `-- name: GetGames :many
-SELECT id, created_at, result, state, round FROM games
+SELECT id, created_at, result, state, round, deck_id FROM games
 `
 
 func (q *Queries) GetGames(ctx context.Context) ([]Game, error) {
@@ -133,6 +137,7 @@ func (q *Queries) GetGames(ctx context.Context) ([]Game, error) {
 			&i.Result,
 			&i.State,
 			&i.Round,
+			&i.DeckID,
 		); err != nil {
 			return nil, err
 		}
@@ -163,7 +168,7 @@ func (q *Queries) GetMessage(ctx context.Context, id uuid.UUID) (ChatMessage, er
 }
 
 const getRoom = `-- name: GetRoom :one
-SELECT id, created_at, result, state, round FROM games
+SELECT id, created_at, result, state, round, deck_id FROM games
 WHERE id=$1
 `
 
@@ -176,6 +181,7 @@ func (q *Queries) GetRoom(ctx context.Context, id uuid.UUID) (Game, error) {
 		&i.Result,
 		&i.State,
 		&i.Round,
+		&i.DeckID,
 	)
 	return i, err
 }
@@ -211,17 +217,44 @@ func (q *Queries) GetRoomMessages(ctx context.Context, roomID uuid.UUID) ([]Chat
 	return items, nil
 }
 
-const removePlayerFromRoomReturningRoom = `-- name: RemovePlayerFromRoomReturningRoom :one
-DELETE FROM players 
-WHERE id=$1
-RETURNING "room_id"
+const getRoomPlayers = `-- name: GetRoomPlayers :many
+SELECT 
+    "id" 
+FROM players 
+WHERE
+    room_id=$1
 `
 
-func (q *Queries) RemovePlayerFromRoomReturningRoom(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
-	row := q.db.QueryRow(ctx, removePlayerFromRoomReturningRoom, id)
-	var room_id uuid.UUID
-	err := row.Scan(&room_id)
-	return room_id, err
+func (q *Queries) GetRoomPlayers(ctx context.Context, roomID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, getRoomPlayers, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const removePlayerFromRoom = `-- name: RemovePlayerFromRoom :one
+DELETE FROM players 
+WHERE id=$1
+RETURNING "id"
+`
+
+func (q *Queries) RemovePlayerFromRoom(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, removePlayerFromRoom, id)
+	err := row.Scan(&id)
+	return id, err
 }
 
 const setRoomState = `-- name: SetRoomState :exec

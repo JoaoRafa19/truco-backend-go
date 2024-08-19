@@ -2,9 +2,11 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"sync"
 
+	"github.com/JoaoRafa19/truco-backend-go/internal/deck"
 	"github.com/JoaoRafa19/truco-backend-go/internal/store/pgstore"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -13,13 +15,18 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type Room struct {
+	connections map[*websocket.Conn]context.CancelFunc
+	deck        deck.Deck
+}
+
 type apiHandler struct {
 	q         *pgstore.Queries
 	r         *chi.Mux
 	tokenAuth *jwtauth.JWTAuth
 	upgrader  websocket.Upgrader
 	mu        *sync.Mutex
-	clients   map[string]map[*websocket.Conn]context.CancelFunc
+	clients   map[string]Room
 }
 
 func NewHandler(q *pgstore.Queries) http.Handler {
@@ -30,10 +37,10 @@ func NewHandler(q *pgstore.Queries) http.Handler {
 			CheckOrigin: func(r *http.Request) bool {
 				return true
 			},
-			
 		},
-		mu: &sync.Mutex{},
-		clients: make(map[string]map[*websocket.Conn]context.CancelFunc),
+
+		mu:      &sync.Mutex{},
+		clients: make(map[string]Room),
 	}
 
 	r := chi.NewRouter()
@@ -50,15 +57,17 @@ func NewHandler(q *pgstore.Queries) http.Handler {
 	}))
 
 	r.Get("/echo/{message}/teste", h.handleEcho)
-	
+
 	r.Route("/game", func(r chi.Router) {
 		r.Post("/", h.handleCreateGame)
 		r.Get("/", h.getAllRooms)
 		r.Patch("/{game_id}/enter", h.handleEnterGame)
-		r.Route("/{game_id}", func(r chi.Router) {
+		r.Route("/{game_id}/", func(r chi.Router) {
 			r.Use(jwtauth.Verifier(h.tokenAuth))
 			r.Use(jwtauth.Authenticator(h.tokenAuth))
-			r.Get("/connect", h.handleConnectToRoom)
+			r.Get("/connect", h.handleConnectToRoom) //ws
+			r.Get("/", h.getGameState)
+			r.Patch("/start", h.handleStartGame)
 		})
 	})
 
@@ -67,25 +76,23 @@ func NewHandler(q *pgstore.Queries) http.Handler {
 	return h
 }
 
-/*
-
-func (h apiHandler) notifyClients(msg Message) {
+func (h apiHandler) notifyClients(event []byte, roomId string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	subs, ok := h.subscribers[msg.RoomID]
-	if !ok || len(subs) == 0 {
+	room, ok := h.clients[roomId]
+	if !ok || len(room.connections) == 0 {
 		return
 	}
 
-	for conn, cancel := range subs {
-		if err := conn.WriteJSON(msg); err != nil {
+	for conn, cancel := range room.connections {
+		if err := conn.WriteMessage(websocket.BinaryMessage, event); err != nil {
 			slog.Error("failed to send message to client", "error", err)
 			cancel()
 		}
 	}
 }
-*/
+
 func (h apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.r.ServeHTTP(w, r)
 }

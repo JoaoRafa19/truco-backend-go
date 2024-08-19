@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/JoaoRafa19/truco-backend-go/internal/deck"
 	"github.com/JoaoRafa19/truco-backend-go/internal/store/pgstore"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/jwtauth/v5"
@@ -16,6 +17,25 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx"
 )
+
+type EventType uint8
+
+const (
+	Message int = iota
+	StartGame
+	Card
+	Rise
+	Response
+)
+
+type Event struct {
+	Type    EventType `json:"type"`
+	Message []byte    `json:"message"`
+}
+
+type CardEvent struct {
+	Card string `json:"card"`
+}
 
 func (h apiHandler) handleEcho(w http.ResponseWriter, r *http.Request) {
 	message := chi.URLParam(r, "message")
@@ -50,7 +70,15 @@ func returnData(result []byte, w http.ResponseWriter) {
 
 func (h apiHandler) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 
-	game, err := h.q.CreateNewGame(r.Context())
+	deck, err := deck.CreateDeck()
+
+	if err != nil {
+		slog.Error("CreateGame", "error", err)
+		returnError(w, http.StatusInternalServerError)
+		return
+	}
+
+	game, err := h.q.CreateNewGame(r.Context(), deck.DeckID)
 	if err != nil {
 		slog.Error("CreateGame", "error", err)
 		returnError(w, http.StatusInternalServerError)
@@ -119,7 +147,26 @@ func (h apiHandler) handleEnterGame(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		slog.Info("unable to create player")
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		returnError(w, 404)
+		return
+	}
+
+	_, err = h.q.GetRoom(r.Context(), roomID)
+
+	if err != nil {
+		returnError(w, http.StatusInternalServerError)
+		return
+	}
+
+	playersInRoom, err := h.q.GetRoomPlayers(r.Context(), roomID)
+	if err != nil {
+		returnError(w, http.StatusInternalServerError)
+		return
+	}
+	order := int32(len(playersInRoom))
+
+	if err := h.q.SetOrder(r.Context(), pgstore.SetOrderParams{Ordem: order, ID: playerID}); err != nil {
+		returnError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -136,9 +183,10 @@ func (h apiHandler) handleEnterGame(w http.ResponseWriter, r *http.Request) {
 
 	type responseBody struct {
 		Token string `json:"token"`
+		Order int32  `json:"order"`
 	}
 
-	result, err := json.Marshal(responseBody{Token: tokenString})
+	result, err := json.Marshal(responseBody{Token: tokenString, Order: order})
 
 	if err != nil {
 		returnError(w, http.StatusInternalServerError)
@@ -185,23 +233,17 @@ func (h apiHandler) handleConnectToRoom(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	
 	playerID, roomID, err := h.GetPlayerAndRoom(r, w, roomID)
 	if err != nil {
 		slog.Error("Erro ao validar informações", "error", err)
 		returnError(w, http.StatusBadRequest)
 		return
-	} 
+	}
 
-	playerIsInRoom := func() bool {
-		for _, player := range players {
-
-			if player.String() == playerID.String() {
-				return true
-			}
-		}
-		return false
-	}()
+	playerIsInRoom := playerIsInRoom(players, playerID)
+	if !playerIsInRoom {
+		return
+	}
 
 	if !playerIsInRoom {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -222,18 +264,92 @@ func (h apiHandler) handleConnectToRoom(w http.ResponseWriter, r *http.Request) 
 	// Trava o mutex para fazer alteração no map de conexões
 	h.mu.Lock()
 
-	if _, ok := h.clients[roomID.String()]; !ok {
-		h.clients[roomID.String()] = make(map[*websocket.Conn]context.CancelFunc)
+	room, ok := h.clients[roomID.String()]
+
+	if !ok {
+		room = Room{
+			connections: make(map[*websocket.Conn]context.CancelFunc),
+		}
 	}
 
+	room.connections[c] = cancel
+
 	slog.Info("new client", "room", roomID.String())
-	h.clients[roomID.String()][c] = cancel
+	h.clients[roomID.String()] = room
 
 	h.mu.Unlock()
 
 	go h.readAndNotifyClients(c, r, playerID, roomID)
 
 	<-ctx.Done()
+}
+
+func playerIsInRoom(players []uuid.UUID, playerID uuid.UUID) bool {
+
+	for _, player := range players {
+
+		if player.String() == playerID.String() {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (h apiHandler) handleStartGame(w http.ResponseWriter, r *http.Request) {
+	rawRoomId := chi.URLParam(r, "game_id")
+	roomID, err := uuid.Parse(rawRoomId)
+	if err != nil {
+		returnError(w, 500)
+		return
+	}
+
+	playerID, roomID, err := h.GetPlayerAndRoom(r, w, roomID)
+	if err != nil {
+		returnError(w, 500)
+		return
+	}
+
+	room, err := h.q.GetRoom(r.Context(), roomID)
+	if err != nil {
+		returnError(w, 404)
+		return
+	}
+
+	players, err := h.q.GetRoomPlayers(r.Context(), roomID)
+	if err != nil {
+		returnError(w, 404)
+		return
+	}
+
+	isInRoom := playerIsInRoom(players, playerID)
+
+	if !isInRoom {
+		returnError(w, http.StatusUnauthorized)
+		return
+	}
+
+	type response struct {
+		Type  int    `json:"type"`
+		Event string `json:"event"`
+	}
+
+	payload := response{
+		Event: "start game",
+		Type:  StartGame,
+	}
+
+	byteMessage, err := json.Marshal(payload)
+	if err != nil {
+		returnError(w, http.StatusUnauthorized)
+		return
+	}
+
+	go h.notifyClients(byteMessage, roomID.String())
+
+	returnData(byteMessage, w)
+	fmt.Println(playerID, room)
+
 }
 
 func (h apiHandler) readAndNotifyClients(c *websocket.Conn, r *http.Request, playerID uuid.UUID, roomID uuid.UUID) error {
@@ -247,15 +363,19 @@ func (h apiHandler) readAndNotifyClients(c *websocket.Conn, r *http.Request, pla
 			return err
 		}
 
-		if strings.Contains(string(msg), "echo:") {
-			slog.Info("ROOMID", "room:", roomID.String())
-			c.WriteMessage(websocket.TextMessage, []byte(msg))
-		}
+		/*go func () {
+			for connection := range h.clients[roomID.String()].connections {
+				connection.WriteMessage(msgType, msg)
+			}
+		}()*/
 
+		if strings.Contains(string(msg), "echo:") {
+			c.WriteMessage(msgType, msg)
+		}
 	}
 }
 
-func (apiHandler) GetPlayerAndRoom(r *http.Request, w http.ResponseWriter, roomID uuid.UUID) (uuid.UUID, uuid.UUID, error) {
+func (h apiHandler) GetPlayerAndRoom(r *http.Request, w http.ResponseWriter, roomID uuid.UUID) (uuid.UUID, uuid.UUID, error) {
 	_, data, err := jwtauth.FromContext(r.Context())
 	if err != nil {
 		http.Error(w, "something went wrong", http.StatusInternalServerError)
@@ -330,7 +450,10 @@ func (h apiHandler) disconectClient(c *websocket.Conn, r *http.Request, playerId
 		return err
 	}
 
-	delete(h.clients[room_id.String()], c)
+	delete(h.clients[room_id.String()].connections, c)
+	if len(h.clients[room_id.String()].connections) == 0 {
+		delete(h.clients, room_id.String())
+	}
 	room, err := h.q.GetRoomPlayers(r.Context(), room_id)
 	if err != nil {
 		slog.Error("erro ao terminar jogo", "error", err)
@@ -338,7 +461,6 @@ func (h apiHandler) disconectClient(c *websocket.Conn, r *http.Request, playerId
 	}
 
 	if len(room) == 0 {
-		delete(h.clients, room_id.String())
 		id, err := h.q.DeleteGameRoom(r.Context(), room_id)
 		if err != nil {
 			slog.Error("erro ao terminar jogo", "error", err, "id", id)
@@ -346,4 +468,8 @@ func (h apiHandler) disconectClient(c *websocket.Conn, r *http.Request, playerId
 		}
 	}
 	return c.Close()
+}
+
+func (h apiHandler) getGameState(w http.ResponseWriter, r *http.Request) {
+
 }

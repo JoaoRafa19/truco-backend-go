@@ -70,11 +70,12 @@ type Game struct {
 	Result    []byte
 	State     State
 	Round     int32
-	DeckID    pgtype.Text
+	DeckID    string
 }
 
 type Player struct {
 	ID     uuid.UUID
 	Name   string
 	RoomID uuid.UUID
+	Ordem  int32
 }

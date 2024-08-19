@@ -34,14 +34,14 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (u
 
 const createNewGame = `-- name: CreateNewGame :one
 INSERT INTO games 
-("state", "round", "created_at", "result")
+("state", "round", "created_at", "result", "deck_id")
 VALUES 
-(DEFAULT, DEFAULT, DEFAULT, DEFAULT)
+(DEFAULT, DEFAULT, DEFAULT, DEFAULT, $1)
 RETURNING id, created_at, result, state, round, deck_id
 `
 
-func (q *Queries) CreateNewGame(ctx context.Context) (Game, error) {
-	row := q.db.QueryRow(ctx, createNewGame)
+func (q *Queries) CreateNewGame(ctx context.Context, deckID string) (Game, error) {
+	row := q.db.QueryRow(ctx, createNewGame, deckID)
 	var i Game
 	err := row.Scan(
 		&i.ID,
@@ -223,6 +223,7 @@ SELECT
 FROM players 
 WHERE
     room_id=$1
+ORDER BY ordem
 `
 
 func (q *Queries) GetRoomPlayers(ctx context.Context, roomID uuid.UUID) ([]uuid.UUID, error) {
@@ -255,6 +256,22 @@ func (q *Queries) RemovePlayerFromRoom(ctx context.Context, id uuid.UUID) (uuid.
 	row := q.db.QueryRow(ctx, removePlayerFromRoom, id)
 	err := row.Scan(&id)
 	return id, err
+}
+
+const setOrder = `-- name: SetOrder :exec
+UPDATE players 
+SET "ordem"=$1
+WHERE id=$2
+`
+
+type SetOrderParams struct {
+	Ordem int32
+	ID    uuid.UUID
+}
+
+func (q *Queries) SetOrder(ctx context.Context, arg SetOrderParams) error {
+	_, err := q.db.Exec(ctx, setOrder, arg.Ordem, arg.ID)
+	return err
 }
 
 const setRoomState = `-- name: SetRoomState :exec

@@ -1,16 +1,7 @@
 -- Write your migrate up statements here
-
-ALTER TABLE games 
-ADD deck_id VARCHAR(255) UNIQUE NOT NULL;
-
-CREATE INDEX idx_salas_deckid ON games (deck_id);
+ALTER TABLE players ADD ordem INTEGER NOT NULL DEFAULT -1;
 
 ---- create above / drop below ----
-
-DROP INDEX IF EXISTS idx_salas_deckid;
-
-ALTER TABLE games
-DROP COLUMN deck_id;
-
+ALTER TABLE DROP COLUMN ordem;
 -- Write your migrate down statements here. If this migration is irreversible
 -- Then delete the separator line above.

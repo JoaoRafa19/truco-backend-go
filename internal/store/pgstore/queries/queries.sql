@@ -3,9 +3,9 @@ SELECT * FROM games;
 
 -- name: CreateNewGame :one
 INSERT INTO games 
-("state", "round", "created_at", "result")
+("state", "round", "created_at", "result", "deck_id")
 VALUES 
-(DEFAULT, DEFAULT, DEFAULT, DEFAULT)
+(DEFAULT, DEFAULT, DEFAULT, DEFAULT, $1)
 RETURNING *;
 
 -- name: GetRoom :one
@@ -24,7 +24,9 @@ SELECT
     "id" 
 FROM players 
 WHERE
-    room_id=$1;
+    room_id=$1
+ORDER BY ordem;
+
 
 
 -- name: CreateMessage :one 
@@ -62,3 +64,9 @@ RETURNING "id";
 
 -- name: GetAllRooms :many
 SELECT * FROM games;
+
+
+-- name: SetOrder :exec
+UPDATE players 
+SET "ordem"=$1
+WHERE id=$2;

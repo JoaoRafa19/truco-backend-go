@@ -363,6 +363,8 @@ func (h apiHandler) readAndNotifyClients(c *websocket.Conn, r *http.Request, pla
 			return err
 		}
 
+		fmt.Println(roomID)
+
 		/*go func () {
 			for connection := range h.clients[roomID.String()].connections {
 				connection.WriteMessage(msgType, msg)
